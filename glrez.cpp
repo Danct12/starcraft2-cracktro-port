@@ -1,12 +1,24 @@
-#include <windows.h>
 #include <stdio.h>
 #include <math.h>
-#include <gl\gl.h>
-#include <gl\glu.h>
-#include <gl\glaux.h>
-#include "resource.h"
+#include <unistd.h>
+#include <GLFW/glfw3.h>
+#include <GL/gl.h>
+#include <GL/glu.h>
 #include "timer.h"
-#include "minifmod.h"
+#include <minifmod/minifmod.h>
+
+#include "resource/db_wot61.h"
+#include "resource/font.h"
+#include "resource/logo.h"
+#include "resource/razor.h"
+#include "resource/scanline.h"
+
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_ONLY_BMP
+#define STBI_NO_HDR
+#define STBI_NO_LINEAR
+#define STBI_NO_STDIO
+#include "stb_image.h"
 
 #define DEBUG 0						// debug [0/1]
 #define START 4						// part to start
@@ -30,7 +42,8 @@ int frame_total=0;
 bool done=false;
 
 #ifdef SNG
-	FMUSIC_MODULE *mod;		// music handle
+	Module *mod;			// music handle
+	PlayerState *mod_state;
 	int mod_ord=-1;				// pattern order
 	int mod_row=-1;				// row number
 	int mod_prv_row=0;		// previous row number
@@ -52,15 +65,17 @@ bool done=false;
 #define GRADIENT_LIST 12
 #define BORDER_LIST 13
 
-HDC				hDC=NULL;			// GDI device context
-HGLRC			hRC=NULL;			// rendering context
-HWND			hWnd=NULL;		// window handle
-HINSTANCE	hInstance;		// instance application
+GLuint razor_id;
+GLuint scanline_id;
+GLuint font_id;
+GLuint logo_id;
+
+GLFWwindow* window=NULL;
 
 int  keys[256];					// keyboard array
 int	 active=true;				// window active flag
 bool fullscreen=DEBUG?false:true;	// fullscreen flag
-bool pause=false;				// pause flag
+bool dempause=false;				// pause flag
 float fov_base=70;			// base fov angle
 float fov=fov_base;			// field of view angle
 float nearplane=0.5f;		// nearplane
@@ -123,20 +138,20 @@ float liner_g=1.0f;			// color g
 float liner_b=1.0f;			// color b
 float liner_color;			// color increment
 /* text variable				*/
-char *txt;
-char *name="Razor 1911 - StarCraft ][";
-char *txt_info1="\r\r\r   ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿\rÄÄÄ´ ğ=- RAZOR 1911 PRESENTS -=ğ ÃÄÄÄ\r   ÀÂÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÂÙ\r    ³                           ³\r    ³        StarCraft][        ³\r    ³   ğ Wings of Liberty ğ    ³\r    ³                           ³\r    ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ\r                                 ";
-char *txt_info2="\r\r\rÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿\r³        < Informations >        ³\rÃÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ´\r³ Supplied By     \007 *** *****    ³\r³ Cracked By      \007 ******       ³\r³ Release Date    \007 31 July 2010 ³\r³ Protection Type \007 Battle.net   ³\rÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ\r                                  ";
-char *txt_info3="\r\r\r   ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿\r   ³        < Greetings >        ³\r   ÀÄÂÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÂÄÙ\r     ³    -=ğ BLIZZARD\003 ğ=-    ³\r     ³ \007 Please, try again \002 \007 ³\r   ÚÄÁÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÁÄ¿\rÄÄÄ´ ğğğ NO INTERNET NEEDED! ğğğ ÃÄÄÄ\r   ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ\r                                  ";
-char *txt_info4="\r\r\r ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿\r ³ IF YOU LIKED THIS PRODUCT ³\r ÀÂÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÂÙ\rÄÄ´  -=ğ PLEASE BUY IT ğ=-  ÃÄÄ\r ÚÁÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÁ¿\r ³ THE PUBLISHERS OF QUALITY ³\r ³ SOFTWARE DESERVE SUPPORT! ³\r ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ\r                              ";
-char *txt_info5="\r\r\rÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿\r³ You reach the end of this ³\r³ little intro. Thank a lot ³\r³ for reading everything! \002 ³\rÃÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ´\r³ As a gift, you can hit F2 ³\r³ key for an hidden message ³\rÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ\r                             ";
-char *txt_logo="\r\r\r/\\______  /\\______  ____/\\______     __\r\\____   \\/  \\__   \\/  _ \\____   \\ __/  \\____\r / _/  _/    \\/   /   /  / _/  _// / / / / /\r/  \\   \\  /\\ /   /\\  /  /  \\   \\/ /\\  / / /\r\\__/\\   \\/RTX______\\___/\\__/\\   \\/ / /_/_/\rğğğğğ\\___)ğğğ\\__)ğğğğğğğğğğğğ\\___)ğ\\/ğğğğğğ\rRAZOR 1911 \007 SHARPENING THE BLADE 1985,2010 \r                                            ";
-char *txt_credits[]={"PIRATES OF THE 777 SEAS ","","","","CODE","REZ","","LOGO","KENET","","MUSIC","WOTW","DUBMOOD"};
-char *txt_intro="";
-char *txt_intro1="\003 WE ARE PROUD TO PRESENT \003";
-char *txt_intro2="\002 A BRAND NEW RELEASE BY \002";
-char *txt_hidden[]={"  \003 RAZOR 1911 \003    \003 RAZOR 1911 \003    \003 RAZOR 1911 \003 ","  \002 \007WE RULEZ\007 \002    \002 \007WE RULEZ\007 \002    \002 \007WE RULEZ\007 \002 ","  SKID ROW SUCKS    SKID ROW SUCKS    SKID ROW SUCKS "};
-char *txt_crack="\003 Happy birthday Razor 1911 \003 Sharpening the blade since 1985! \016 We also want to wish an happy birthday to the Commodore Amiga who turned 25 years old, just like us! -=*=- We already cracked the following protection: 3PLock, ActiveMARK, Alcatraz, Alpha-DVD, Alpha-ROM, CD Lock, CD-Cops, CD-Lock, CD-Protect, CodeLok, CopyLok, CrypKey, DBB, DiscGuard, DVD-Cops, FADE, HexaLock, JoWood X-Prot, LaserLock, LockBlocks, PhenoProtect, ProRing, ProtecDISC, ProtectCD, Ring PROTECH, Roxxe, SafeCast, SafeDisc, SecuROM, SmartE, SmarteCD, SoftLock, Solidshield, StarForce, SVK Protector, TAGES, UbiSoft DRM, VOB Protect \002 SVKP, Themidea, VMProtect, Armadillo, EXECryptor, ACProtect, ASPack, FSG, MEW, MoleBox, Morphine, Obsidium, PeCompact, PeLock, SafeCast, SDProtector, tElock, WinLicense, Yodas Crypter, Yodas Protector and still counting! \002";
+const char *txt;
+const char *name="Razor 1911 - StarCraft ][";
+const char *txt_info1="\r\r\r   ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿\rÄÄÄ´ ğ=- RAZOR 1911 PRESENTS -=ğ ÃÄÄÄ\r   ÀÂÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÂÙ\r    ³                           ³\r    ³        StarCraft][        ³\r    ³   ğ Wings of Liberty ğ    ³\r    ³                           ³\r    ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ\r                                 ";
+const char *txt_info2="\r\r\rÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿\r³        < Informations >        ³\rÃÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ´\r³ Supplied By     \007 *** *****    ³\r³ Cracked By      \007 ******       ³\r³ Release Date    \007 31 July 2010 ³\r³ Protection Type \007 Battle.net   ³\rÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ\r                                  ";
+const char *txt_info3="\r\r\r   ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿\r   ³        < Greetings >        ³\r   ÀÄÂÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÂÄÙ\r     ³    -=ğ BLIZZARD\003 ğ=-    ³\r     ³ \007 Please, try again \002 \007 ³\r   ÚÄÁÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÁÄ¿\rÄÄÄ´ ğğğ NO INTERNET NEEDED! ğğğ ÃÄÄÄ\r   ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ\r                                  ";
+const char *txt_info4="\r\r\r ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿\r ³ IF YOU LIKED THIS PRODUCT ³\r ÀÂÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÂÙ\rÄÄ´  -=ğ PLEASE BUY IT ğ=-  ÃÄÄ\r ÚÁÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÁ¿\r ³ THE PUBLISHERS OF QUALITY ³\r ³ SOFTWARE DESERVE SUPPORT! ³\r ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ\r                              ";
+const char *txt_info5="\r\r\rÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿\r³ You reach the end of this ³\r³ little intro. Thank a lot ³\r³ for reading everything! \002 ³\rÃÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ´\r³ As a gift, you can hit F2 ³\r³ key for an hidden message ³\rÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ\r                             ";
+const char *txt_logo="\r\r\r/\\______  /\\______  ____/\\______     __\r\\____   \\/  \\__   \\/  _ \\____   \\ __/  \\____\r / _/  _/    \\/   /   /  / _/  _// / / / / /\r/  \\   \\  /\\ /   /\\  /  /  \\   \\/ /\\  / / /\r\\__/\\   \\/RTX______\\___/\\__/\\   \\/ / /_/_/\rğğğğğ\\___)ğğğ\\__)ğğğğğğğğğğğğ\\___)ğ\\/ğğğğğğ\rRAZOR 1911 \007 SHARPENING THE BLADE 1985,2010 \r                                            ";
+const char *txt_credits[]={"PIRATES OF THE 777 SEAS ","","","","CODE","REZ","","LOGO","KENET","","MUSIC","WOTW","DUBMOOD"};
+const char *txt_intro="";
+const char *txt_intro1="\003 WE ARE PROUD TO PRESENT \003";
+const char *txt_intro2="\002 A BRAND NEW RELEASE BY \002";
+const char *txt_hidden[]={"  \003 RAZOR 1911 \003    \003 RAZOR 1911 \003    \003 RAZOR 1911 \003 ","  \002 \007WE RULEZ\007 \002    \002 \007WE RULEZ\007 \002    \002 \007WE RULEZ\007 \002 ","  SKID ROW SUCKS    SKID ROW SUCKS    SKID ROW SUCKS "};
+const char *txt_crack="\003 Happy birthday Razor 1911 \003 Sharpening the blade since 1985! \016 We also want to wish an happy birthday to the Commodore Amiga who turned 25 years old, just like us! -=*=- We already cracked the following protection: 3PLock, ActiveMARK, Alcatraz, Alpha-DVD, Alpha-ROM, CD Lock, CD-Cops, CD-Lock, CD-Protect, CodeLok, CopyLok, CrypKey, DBB, DiscGuard, DVD-Cops, FADE, HexaLock, JoWood X-Prot, LaserLock, LockBlocks, PhenoProtect, ProRing, ProtecDISC, ProtectCD, Ring PROTECH, Roxxe, SafeCast, SafeDisc, SecuROM, SmartE, SmarteCD, SoftLock, Solidshield, StarForce, SVK Protector, TAGES, UbiSoft DRM, VOB Protect \002 SVKP, Themidea, VMProtect, Armadillo, EXECryptor, ACProtect, ASPack, FSG, MEW, MoleBox, Morphine, Obsidium, PeCompact, PeLock, SafeCast, SDProtector, tElock, WinLicense, Yodas Crypter, Yodas Protector and still counting! \002";
 /* gear variable				*/
 bool gear_flag=false;		// flag
 float gear_x=0;					// position x
@@ -279,115 +294,88 @@ float x,y,z;
 float r,g,b,c;
 float angle,radius,scale;
 
-LRESULT	CALLBACK WndProc(HWND,UINT,WPARAM,LPARAM);	// wndProc declaration
-
-static PIXELFORMATDESCRIPTOR pfd=
-	{
-	sizeof(PIXELFORMATDESCRIPTOR),
-	1,											// version number
-	PFD_DRAW_TO_WINDOW|			// format must support window
-	PFD_SUPPORT_OPENGL|			// format must support openGL
-	PFD_DOUBLEBUFFER,				// must support double buffering
-	PFD_TYPE_RGBA,					// request an RGBA format
-	window_color,						// select our color depth
-	0,0,0,0,0,0,						// color bits ignored
-	0,											// no alpha buffer
-	0,											// shift bit ignored
-	0,											// no accumulation buffer
-	0,0,0,0,								// accumulation bits ignored
-	window_depth,						// z-buffer (depth buffer)
-	0,											// no stencil buffer
-	0,											// no auxiliary buffer
-	PFD_MAIN_PLANE,					// main drawing layer
-	0,											// reserved
-	0,0,0										// layer masks ignored
-	};
-
 #ifdef SNG
 
-	typedef struct 
-		{
-		int length,pos;
-		void *data;
-		} MEMFILE;
+typedef struct {
+	size_t length;
+	size_t pos;
+	char *data;
+} MEMFILE;
 
+void *memopen(const char *name)
+{
 	MEMFILE *memfile;
-	HRSRC	rec;	
+	unsigned char* data;
+	size_t len;
+	memfile=(MEMFILE*)calloc(1, sizeof(*memfile));
 
-	unsigned int memopen(char *name)
-		{
-		HGLOBAL	handle;
-		memfile=(MEMFILE *)GlobalAlloc(GMEM_FIXED|GMEM_ZEROINIT,sizeof(MEMFILE));
-		rec=FindResource(NULL,name,RT_RCDATA);
-		handle=LoadResource(NULL,rec);
-		memfile->data=LockResource(handle);
-		memfile->length=SizeofResource(NULL,rec);
-		memfile->pos=0;
-		return (unsigned int)memfile;
-		}
+	data = db_wot61;
+	len = db_wot61_len;
+	
+	memfile->length = len;
+	memfile->data = (char*)calloc(1, memfile->length);
+	memcpy(memfile->data, data, len);
+	memfile->pos = 0;
 
-	void memclose(unsigned int handle)
-		{
-		MEMFILE *memfile=(MEMFILE *)handle;
-		GlobalFree(memfile);
-		}
+	return memfile;
+}
 
-	int memread(void *buffer,int size,unsigned int handle)
-		{
-		MEMFILE *memfile=(MEMFILE *)handle;
-		if(memfile->pos+size>=memfile->length) size=memfile->length-memfile->pos;
-		memcpy(buffer,(char *)memfile->data+memfile->pos,size);
-		memfile->pos+=size;	
-		return size;
-		}
+void memclose(void *handle) {
+	free(handle);
+}
 
-	void memseek(unsigned int handle,int pos,signed char mode)
-		{
-		MEMFILE *memfile=(MEMFILE *)handle;
-		if(mode==SEEK_SET) 
-			memfile->pos=pos;
-		else if(mode==SEEK_CUR) 
-			memfile->pos+=pos;
-		else if(mode==SEEK_END)
-			memfile->pos=memfile->length+pos;
-		if(memfile->pos>memfile->length)
-			memfile->pos=memfile->length;
-		}
+size_t memread(void *buffer, size_t size, void *handle) {
+	MEMFILE *memfile=(MEMFILE*)handle;
+	if(memfile->pos+size>=memfile->length) size=memfile->length-memfile->pos;
+	memcpy(buffer,(char *)memfile->data+memfile->pos,size);
+	memfile->pos+=size;	
+	return size;
+}
 
-	int memtell(unsigned int handle)
-		{
-		MEMFILE *memfile=(MEMFILE *)handle;
-		return memfile->pos;
-		}
+void memseek(void *handle,long pos, int mode) {
+	MEMFILE *memfile=(MEMFILE*)handle;
+	if(mode==SEEK_SET) 
+		memfile->pos=pos;
+	else if(mode==SEEK_CUR) 
+		memfile->pos+=pos;
+	else if(mode==SEEK_END)
+		memfile->pos=memfile->length+pos;
+	if(memfile->pos>memfile->length)
+		memfile->pos=memfile->length;
+}
 
-	void load_song()
-		{
-		FSOUND_File_SetCallbacks(memopen,memclose,memread,memseek,memtell);
-		mod=FMUSIC_LoadSong(MAKEINTRESOURCE(IDR_DATA3),NULL);
-		}
+long memtell(void *handle) {
+	MEMFILE *memfile=(MEMFILE*)handle;
+	return memfile->pos;
+}
+
+void load_song() {
+	FSOUND_File_SetCallbacks(memopen,memclose,memread,memseek,memtell);
+	mod=FMUSIC_LoadSong(NULL,NULL);
+}
 
 #endif
 
-int load_tex(WORD file,GLint filter,GLint clamp)
-	{
-	HBITMAP hBMP;	// bitmap handle
-	BITMAP BMP;		// bitmap structure
-	hBMP=(HBITMAP)LoadImage(GetModuleHandle(NULL),MAKEINTRESOURCE(file),IMAGE_BITMAP,0,0,LR_CREATEDIBSECTION);
-	if(hBMP)
-		{	
-		GetObject(hBMP,sizeof(BMP),&BMP);
-		glPixelStorei(GL_UNPACK_ALIGNMENT,4);
-		glBindTexture(GL_TEXTURE_2D,file);
-		glTexImage2D(GL_TEXTURE_2D,0,3,BMP.bmWidth,BMP.bmHeight,0,GL_BGR_EXT,GL_UNSIGNED_BYTE,BMP.bmBits);
-		gluBuild2DMipmaps(GL_TEXTURE_2D,3,BMP.bmWidth,BMP.bmHeight,GL_BGR_EXT,GL_UNSIGNED_BYTE,BMP.bmBits);
-		glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR_MIPMAP_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR_MIPMAP_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,clamp);
-		glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,clamp);
-		DeleteObject(hBMP);
-		}
-	return 0;
-	}
+int load_tex(unsigned char *file, int size, GLint filter, GLint clamp) {
+	GLuint TexID;
+	int x, y, cpf;
+
+	stbi_set_flip_vertically_on_load(1);
+	unsigned char *tex = stbi_load_from_memory(file,size,&x,&y,&cpf,0);
+	assert(tex);
+
+	glGenTextures(1,&TexID);
+	glPixelStorei(GL_UNPACK_ALIGNMENT,4);
+	glBindTexture(GL_TEXTURE_2D,TexID);
+	glTexImage2D(GL_TEXTURE_2D,0,3,x,y,0,GL_RGB,GL_UNSIGNED_BYTE,tex);
+	gluBuild2DMipmaps(GL_TEXTURE_2D,3,x,y,GL_RGB,GL_UNSIGNED_BYTE,tex);
+	glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR_MIPMAP_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,filter);
+	glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,clamp);
+	glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,clamp);
+	stbi_image_free(tex);
+	return TexID;
+}
 
 void init3d(GLsizei width,GLsizei height)
 	{
@@ -419,7 +407,7 @@ void calc_txt()
 	liner_i=0;
 	for(i=0;i<liner_length;i++)
 		{
-		if((byte)txt[i]!=13)
+		if(txt[i]!=13)
 			{
 			liner_i++;
 			}
@@ -434,7 +422,7 @@ void calc_txt()
 	fade_value=1.0f;
 	}
 
-void draw_char(byte car,float w,float h,float m)
+void draw_char(char car,float w,float h,float m)
 	{
 	if(car!=32)
 		{
@@ -985,10 +973,10 @@ int InitGL(void)
 	glFogf(GL_FOG_START,2.0f);				// fog start depth
 	glFogf(GL_FOG_END,32.0f);					// fog end depth
 	// load texture
-	load_tex(IDB_FONT,GL_LINEAR,GL_REPEAT);
-	load_tex(IDB_RAZOR,GL_LINEAR,GL_CLAMP);
-	load_tex(IDB_LOGO,GL_LINEAR,GL_CLAMP);
-	load_tex(IDB_SCANLINE,GL_LINEAR,GL_REPEAT);
+	font_id = load_tex(font, font_len,GL_LINEAR,GL_REPEAT);
+	razor_id = load_tex(razor, razor_len,GL_LINEAR,GL_CLAMP);
+	logo_id = load_tex(logo, logo_len,GL_LINEAR,GL_CLAMP);
+	scanline_id = load_tex(scanline, scanline_len,GL_LINEAR,GL_REPEAT);
 	// generate list
 	glNewList(GEAR1_LIST,GL_COMPILE);
 		//glPushMatrix();
@@ -1146,7 +1134,7 @@ int InitGL(void)
 int DrawGLScene(void) // draw scene
 	{
 	// synchro
-	if(!pause)
+	if(!dempause)
 		{
 		frame_total++;
 		frame_counter++;
@@ -1170,7 +1158,7 @@ int DrawGLScene(void) // draw scene
 		if(!mod_play&&timer_global>decrunch_time)
 			{
 			mod_play=true;
-			if(SNG) FMUSIC_PlaySong(mod);
+			if(SNG) mod_state = FMUSIC_PlaySong(mod);
 			}
 		/*if(liner_count_i!=0)
 			{
@@ -1215,14 +1203,14 @@ int DrawGLScene(void) // draw scene
 	if(SNG&&mod_play)
 		{
 		mod_prv_row=mod_row;
-		mod_row=FMUSIC_GetRow(mod);
-		//mod_time=FMUSIC_GetTime(mod);
+		mod_row=FMUSIC_GetRow();
+		//mod_time=FMUSIC_GetTime();
 		if(mod_row!=mod_prv_row)
 			{
 			if(mod_row==0)
 				{
 				#if !DEBUG
-					mod_ord=FMUSIC_GetOrder(mod);
+					mod_ord=FMUSIC_GetOrder();
 				#endif
 				#if DEBUG
 					if(debug_test)
@@ -1498,7 +1486,7 @@ int DrawGLScene(void) // draw scene
 	if(razor_flag1)
 		{
 		float tex_coord=0.5f;
-		if(polygon) glBindTexture(GL_TEXTURE_2D,IDB_RAZOR);
+		if(polygon) glBindTexture(GL_TEXTURE_2D,razor_id);
 		razor_z=razor_radius*cosf((main_angle-razor_angle)*razor_zoom);
 		glColor3f(razor_color,razor_color,razor_color);
 		for(i=0;i<razor_nx;i++)
@@ -1550,7 +1538,7 @@ int DrawGLScene(void) // draw scene
 		}
 	if(razor_flag2)
 		{
-		if(polygon) glBindTexture(GL_TEXTURE_2D,IDB_RAZOR);
+		if(polygon) glBindTexture(GL_TEXTURE_2D,razor_id);
 		razor_z=razor_radius*cosf((main_angle-razor_angle)*razor_zoom);
 		glLoadIdentity();
 		glRotatef(5.0f,1.0f,0,0);
@@ -1572,14 +1560,14 @@ int DrawGLScene(void) // draw scene
 			glEnd();
 			}
 		}
-	if(polygon) glBindTexture(GL_TEXTURE_2D,IDB_FONT);
+	if(polygon) glBindTexture(GL_TEXTURE_2D,font_id);
 	glBlendFunc(GL_ONE,GL_ONE);
 	// draw hidden
 	if(gear_flag)
 		{
 		for(i=0;i<hidden_length;i++)
 			{
-			car=(byte)txt_hidden[hidden_type][i];
+			car=txt_hidden[hidden_type][i];
 			if(car!=32)
 				{
 				glLoadIdentity();
@@ -1631,7 +1619,7 @@ int DrawGLScene(void) // draw scene
 		for(i=0;i<liner_count;i++)
 			{
 			angle=main_angle+liner_i*0.02f;
-			car=(byte)txt[i];
+			car=txt[i];
 			liner_r=0.5f;
 			liner_g=0.4f;
 			liner_b=0.3f;
@@ -1716,7 +1704,7 @@ int DrawGLScene(void) // draw scene
 			for(j=0;j<24;j++)
 				{
 				c=0.0625f;
-				car=(byte)txt_intro[i];
+				car=txt_intro[i];
 				switch(car)
 					{
 					case 2:
@@ -1923,7 +1911,7 @@ int DrawGLScene(void) // draw scene
 			glTranslatef(screen_average*0.075f,credits_y,0);
 			glRotatef(main_angle*(360.0f/12.0f)-i*(360.0f/txt_length),0,0,1.0f);
 			glTranslatef(0,screen_average*0.0425f,0);
-			draw_char((byte)txt_credits[0][i],screen_average*0.012f,screen_average*0.0125f,-screen_average*0.000625f);
+			draw_char(txt_credits[0][i],screen_average*0.012f,screen_average*0.0125f,-screen_average*0.000625f);
 			}
 		credits_color=0.625f+0.75f*cosf(main_angle); if(credits_color>0.625f) credits_color=0.625f;
 		if(credits_color<0)
@@ -1946,7 +1934,7 @@ int DrawGLScene(void) // draw scene
 			{
 			glLoadIdentity();
 			glTranslatef(screen_average*0.075f-((credits_length-1)*screen_average*0.007f)*0.5f+i*screen_average*0.007f,credits_y-screen_average*0.015f,0);
-			draw_char((byte)txt_credits[credits_n][i],screen_average*0.0075f,screen_average*0.0125f,0);
+			draw_char(txt_credits[credits_n][i],screen_average*0.0075f,screen_average*0.0125f,0);
 			}
 		// credits text 2
 		credits_length=(int)strlen(txt_credits[credits_n+1]);
@@ -1955,7 +1943,7 @@ int DrawGLScene(void) // draw scene
 			{
 			glLoadIdentity();
 			glTranslatef(screen_average*0.075f-((credits_length-1)*screen_average*0.013f)*0.5f+i*screen_average*0.013f,credits_y,0);
-			draw_char((byte)txt_credits[credits_n+1][i],screen_average*0.015f,screen_average*0.02f,screen_average*0.001f);
+			draw_char(txt_credits[credits_n+1][i],screen_average*0.015f,screen_average*0.02f,screen_average*0.001f);
 			}
 		// credits text 3
 		credits_length=(int)strlen(txt_credits[credits_n+2]);
@@ -1963,7 +1951,7 @@ int DrawGLScene(void) // draw scene
 			{
 			glLoadIdentity();
 			glTranslatef(screen_average*0.075f-((credits_length-1)*screen_average*0.007f)*0.5f+i*screen_average*0.007f,credits_y+screen_average*0.013f,0);
-			draw_char((byte)txt_credits[credits_n+2][i],screen_average*0.0075f,screen_average*0.0125f,0);
+			draw_char(txt_credits[credits_n+2][i],screen_average*0.0075f,screen_average*0.0125f,0);
 			}
 		// draw crack
 		if(crack_flag)
@@ -1978,7 +1966,7 @@ int DrawGLScene(void) // draw scene
 			if(crack_x-x<0.0f) crack_counter++; if(crack_counter>crack_length) crack_counter=-crack_n;
 			for(i=0;i<crack_n;i++)
 				{
-				car=(byte)(crack_counter+i<0||crack_counter+i>crack_length)?32:txt_crack[crack_counter+i];
+				car=(crack_counter+i<0||crack_counter+i>crack_length)?32:txt_crack[crack_counter+i];
 				if(car!=32)
 					{
 					r=0.375f;
@@ -2106,7 +2094,7 @@ int DrawGLScene(void) // draw scene
 	if(logo_flag)
 		{
 		glLoadIdentity();
-		if(polygon) glBindTexture(GL_TEXTURE_2D,IDB_LOGO);
+		if(polygon) glBindTexture(GL_TEXTURE_2D,logo_id);
 		glBlendFunc(GL_SRC_COLOR,GL_ONE);
 		glTranslatef((float)(screen_w-logo_w-logo_margin),(float)(screen_h-logo_h-logo_margin),0);
 		glColor3f(1.0f,1.0f,1.0f);
@@ -2122,7 +2110,7 @@ int DrawGLScene(void) // draw scene
 		{
 		float debug_w=screen_average*0.0125f;
 		float debug_h=screen_average*0.025f;
-		if(polygon) glBindTexture(GL_TEXTURE_2D,IDB_FONT);
+		if(polygon) glBindTexture(GL_TEXTURE_2D,font_id);
 		glBlendFunc(GL_ONE,GL_ONE);
 		glColor3f(0.25f,0.225f,0.2f);
 		char debug[192];
@@ -2133,7 +2121,7 @@ int DrawGLScene(void) // draw scene
 		for(i=0;i<(int)strlen(debug);i++)
 			{
 			j++;
-			car=(byte)debug[i];
+			car=debug[i];
 			if(car==10)
 				{
 				glTranslatef(-j*debug_w*0.85f,debug_h*0.85f,0);
@@ -2147,7 +2135,7 @@ int DrawGLScene(void) // draw scene
 	if(scanline_flag)
 		{
 		glLoadIdentity();
-		if(polygon) glBindTexture(GL_TEXTURE_2D,IDB_SCANLINE);
+		if(polygon) glBindTexture(GL_TEXTURE_2D,scanline_id);
 		glBlendFunc(GL_DST_COLOR,GL_SRC_ALPHA);
 		glColor4f(1.0f,1.0f,1.0f,0.75f);
 		glBegin(GL_QUADS);
@@ -2160,34 +2148,76 @@ int DrawGLScene(void) // draw scene
 	return true;
 	}
 
-void KillGLWindow(void)							// kill window
-	{
-	if(fullscreen)
-		{
-		ChangeDisplaySettings(NULL,0);	// switch back to desktop
-		ShowCursor(false);							// show mouse pointer
-		}
-	if(hRC)
-		{
-		if(!wglMakeCurrent(NULL,NULL)) MessageBox(NULL,"Release Of DC And RC Failed.","SHUTDOWN ERROR",MB_OK|MB_ICONINFORMATION);
-		if(!wglDeleteContext(hRC)) MessageBox(NULL,"Release Rendering Context Failed.","SHUTDOWN ERROR",MB_OK|MB_ICONINFORMATION);
-		hRC=NULL;
-		}
-	if(hDC&&!ReleaseDC(hWnd,hDC)) { MessageBox(NULL,"Release Device Context Failed.","SHUTDOWN ERROR",MB_OK|MB_ICONINFORMATION); hDC=NULL; }
-	if(hWnd&&!DestroyWindow(hWnd)) { MessageBox(NULL,"Could Not Release hWnd.","SHUTDOWN ERROR",MB_OK|MB_ICONINFORMATION); hWnd=NULL; }
-	if(!UnregisterClass("OpenGL",hInstance)) { MessageBox(NULL,"Could Not Unregister Class.","SHUTDOWN ERROR",MB_OK|MB_ICONINFORMATION); hInstance=NULL; }
-	delete timer;
-	}
+void window_close_callback(GLFWwindow* window)
+{
+	done=true;
+}
 
-int CreateGLWindow(char* title)
+void error_callback(int error, const char* description)
+{
+    fprintf(stderr, "Error: %s\n", description);
+}
+
+void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
+{
+	if (action == GLFW_PRESS) {
+		switch (key) {
+		case GLFW_KEY_ESCAPE:
+			done=true;
+			break;
+		case GLFW_KEY_F1:
+			debug_flag=!debug_flag;
+			break;
+		case GLFW_KEY_F2:
+			hidden_flag=!hidden_flag;
+			hidden_color();
+			break;
+		case GLFW_KEY_F3:
+			polygon=!polygon;
+			glPolygonMode(GL_FRONT,polygon?GL_FILL:GL_LINE);
+			//if(polygon) glDisable(GL_LINE_SMOOTH); else glEnable(GL_LINE_SMOOTH);
+			break;
+		#if DEBUG
+		case GLFW_KEY_BACKSPACE:
+			dempause=!dempause;
+			break;
+		case GLFW_KEY_TAB:
+			synchro();
+			break;
+		#endif
+		case GLFW_KEY_ENTER:
+			#if DEBUG
+				flash();
+				hidden_color();
+				calc_txt();
+				razor_color=1.0f;
+				razor_radius=0;
+			#endif
+			frame_total=0;
+			timer_fps_total=0;
+			timer_fps_min=32768;
+			timer_fps_max=0;
+			break;
+		}
+	}
+}
+	
+void KillGLWindow(void)							// kill window
+{
+	if (window)
+		glfwDestroyWindow(window);
+
+	glfwTerminate();
+	delete timer;
+}
+
+int CreateGLWindow(const char* title)
 	{
+	GLFWmonitor* primary = glfwGetPrimaryMonitor();
+	const GLFWvidmode* mode = glfwGetVideoMode(primary);
 	GLuint PixelFormat;												// pixel format result
-	WNDCLASS wc;															// windows class structure
-	DWORD dwExStyle;													// window extended style
-	DWORD dwStyle;														// window style
-	RECT WindowRect;													// upper_left/lower_right values
-	int w=GetSystemMetrics(SM_CXSCREEN);
-	int h=GetSystemMetrics(SM_CYSCREEN);
+	int w=mode->width;
+	int h=mode->height;
 	screen_w=fullscreen?w:window_w;
 	screen_h=fullscreen?h:window_h;
 	screen_average=(screen_w+screen_h)/2;
@@ -2195,269 +2225,68 @@ int CreateGLWindow(char* title)
 	timer_fps_max=0;
 	border_h=(int)(screen_h*0.125f);
 	decrunch_h=(int)(screen_h*0.01f);
-	WindowRect.left=(long)(fullscreen?0:2);		// set left value
-	WindowRect.right=(long)screen_w;					// set right value
-	WindowRect.top=(long)(fullscreen?0:2);		// set top value
-	WindowRect.bottom=(long)screen_h;					// set bottom value
-	pfd.cColorBits=window_color;							// set color depth
-	hInstance=GetModuleHandle(NULL);					// window instance
-	wc.style=CS_HREDRAW|CS_VREDRAW|CS_OWNDC;	// redraw on size, own DC for window
-	wc.lpfnWndProc=(WNDPROC) WndProc;					// WndProc handles messages
-	wc.cbClsExtra=0;													// no extra window data
-	wc.cbWndExtra=0;													// no extra window data
-	wc.hInstance=hInstance;										// set the instance
-	wc.hIcon=LoadIcon(hInstance,MAKEINTRESOURCE(IDI_ICON));	// load default icon
-	wc.hCursor=LoadCursor(NULL,IDC_ARROW);		// load arrow pointer
-	wc.hbrBackground=NULL;										// no background
-	wc.lpszMenuName=NULL;											// no menu
-	wc.lpszClassName="OpenGL";								// set class name
-	if(!RegisterClass(&wc))										// register window class
-		{
-		MessageBox(NULL,"Failed To Register The Window Class.","ERROR",MB_OK|MB_ICONEXCLAMATION);
-		return false;
-		}
-	if(fullscreen)
-		{
-		DEVMODE dmScreenSettings;															// device mode
-		memset(&dmScreenSettings,0,sizeof(dmScreenSettings));	// is memory cleared ?
-		dmScreenSettings.dmSize=sizeof(dmScreenSettings);			// devmode structure size
-		dmScreenSettings.dmPelsWidth=screen_w;								// screen width
-		dmScreenSettings.dmPelsHeight=screen_h;								// screen height
-		dmScreenSettings.dmBitsPerPel=window_color;						// bits per pixel
-		dmScreenSettings.dmFields=DM_BITSPERPEL|DM_PELSWIDTH|DM_PELSHEIGHT;
-		// set selected mode
-		if(ChangeDisplaySettings(&dmScreenSettings,CDS_FULLSCREEN)!=DISP_CHANGE_SUCCESSFUL)
-			{
-			if(MessageBox(NULL,"your video card sucks.\nuse windowed mode instead?","ERROR",MB_YESNO|MB_ICONEXCLAMATION)==IDYES)
-				{
-				fullscreen=false;
-				}
-			else
-				{
-				MessageBox(NULL,"we are closing.","ERROR",MB_OK|MB_ICONSTOP);
-				return false;
-				}
-			}
-		}
-	if(fullscreen)
-		{
-		dwExStyle=WS_EX_APPWINDOW;									// window extended style
-		dwStyle=WS_POPUP;														// windows style
-		ShowCursor(false);													// hide cursor
-		}
-	else
-		{
-		dwExStyle=WS_EX_APPWINDOW|WS_EX_WINDOWEDGE;	// window extended style
-		dwStyle=WS_OVERLAPPEDWINDOW;								// windows style
-		}
-	AdjustWindowRectEx(&WindowRect,dwStyle,false,dwExStyle);	// adjust window to requested size
-	// create window
-	if(!(hWnd=CreateWindowEx(dwExStyle,		// extended style for window
-		"OpenGL",														// class name
-		title,															// window title
-		(dwStyle|														// defined window style
-		WS_CLIPSIBLINGS|										// required window style
-		WS_CLIPCHILDREN)										// required window style
-		&~WS_THICKFRAME,										// window style (no-resize)
-		(int)((w-screen_w)/2),							// window position x
-		(int)((h-screen_h)/2),							// window position y
-		(WindowRect.right-WindowRect.left),	// window width
-		(WindowRect.bottom-WindowRect.top),	// window height
-		NULL,																// no parent window
-		NULL,																// no menu
-		hInstance,													// instance
-		NULL)))															// don't pass anything to WM_CREATE!
-		{
-		KillGLWindow();
-		MessageBox(NULL,"Window Creation Error.","ERROR",MB_OK|MB_ICONEXCLAMATION);
-		return false;
-		}
-	if(!(hDC=GetDC(hWnd)))	// Did We Get A Device Context?
-		{
-		KillGLWindow();
-		MessageBox(NULL,"Can't Create A GL Device Context.","ERROR",MB_OK|MB_ICONEXCLAMATION);
-		return false;
-		}
-	if(!(PixelFormat=ChoosePixelFormat(hDC,&pfd)))	// Did Windows Find A Matching Pixel Format?
-		{
-		KillGLWindow();
-		MessageBox(NULL,"Can't Find A Suitable PixelFormat.","ERROR",MB_OK|MB_ICONEXCLAMATION);
-		return false;
-		}
-	if(!SetPixelFormat(hDC,PixelFormat,&pfd))	// Are We Able To Set The Pixel Format?
-		{
-		KillGLWindow();
-		MessageBox(NULL,"Can't Set The PixelFormat.","ERROR",MB_OK|MB_ICONEXCLAMATION);
-		return false;
-		}
-	if(!(hRC=wglCreateContext(hDC)))	// Are We Able To Get A Rendering Context?
-		{
-		KillGLWindow();
-		MessageBox(NULL,"Can't Create A GL Rendering Context.","ERROR",MB_OK|MB_ICONEXCLAMATION);
-		return false;
-		}
-	if(!wglMakeCurrent(hDC,hRC))	// Try To Activate The Rendering Context
-		{
-		KillGLWindow();
-		MessageBox(NULL,"Can't Activate The GL Rendering Context.","ERROR",MB_OK|MB_ICONEXCLAMATION);
-		return false;
-		}
-	ShowWindow(hWnd,SW_SHOW);			// show window
-	SetForegroundWindow(hWnd);		// set higher priority
-	SetFocus(hWnd);								// set keyboard focus to window
-	init3d(screen_w,screen_h);		// set up perspective of GL screen
-	if(!InitGL())									// initialize GL window
-		{
-		KillGLWindow();
-		MessageBox(NULL,"Initialization Failed.","ERROR",MB_OK|MB_ICONEXCLAMATION);
-		return false;
-		}
-	return true;
-	}
 
-// window handle,window message,additional message,additional message
-LRESULT CALLBACK WndProc(HWND	hWnd,UINT	uMsg,WPARAM	wParam,LPARAM	lParam)
+	glfwWindowHint(GLFW_DEPTH_BITS, window_color);
+	glfwWindowHint(GLFW_DOUBLEBUFFER, GLFW_TRUE);
+	glfwWindowHint(GLFW_FOCUS_ON_SHOW, GLFW_TRUE);
+	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+	
+	// create window
+	if (fullscreen) {;
+		window = glfwCreateWindow(screen_w, screen_h, title, primary, NULL);
+	} else
+		window = glfwCreateWindow(screen_w, screen_h, title, NULL, NULL);
+
+	if (!window)
+		return false;
+
+	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
+	glfwSetWindowCloseCallback(window, window_close_callback);
+	glfwSetKeyCallback(window, key_callback);
+	
+	glfwMakeContextCurrent(window);
+	
+	init3d(screen_w,screen_h);	// set up perspective of GL screen
+	if(!InitGL())								// initialize GL window
 	{
-	switch(uMsg)								// check windows messages
-		{
-		case WM_ACTIVATE:					// watch for window activate message
-			{
-			if(!HIWORD(wParam))			// check minimization state
-				{
-				active=true;					// program is active
-				}
-			else
-				{
-				active=false;					// program is no longer active
-				}
-			return 0;								// return to the message loop
-			}
-		case WM_SYSCOMMAND:				// intercept system commands
-			{
-			switch(wParam)					// check system calls
-				{
-				case SC_SCREENSAVE:		// screensaver trying to start ?
-				case SC_MONITORPOWER:	// monitor trying to enter powersave ?
-				return 0;							// prevent from happening
-				}
-			break;									// exit
-			}
-		case WM_CLOSE:						// close message ?
-			{
-			PostQuitMessage(0);			// post quit message
-			return 0;
-			}
-		case WM_KEYDOWN:					// key down ?
-			{
-			keys[wParam]=true;			// mark key as true
-			return 0;
-			}
-		case WM_KEYUP:						// key released ?
-			{
-			keys[wParam]=false;			// mark key as false
-			return 0;
-			}
-		/*
-	  case WM_SIZE:							// resize openGL window
-			{
-			ReSizeGLScene(LOWORD(lParam),HIWORD(lParam));	// loword=width,hiword=height
-			return 0;
-			}
-		*/
-		}
-	return DefWindowProc(hWnd,uMsg,wParam,lParam); // pass all unhandled messages to DefWindowProc
+		KillGLWindow();
+		return false;
 	}
+	return true;
+}
 
 // instance,previous instance,command line parameters,window show state
-int WINAPI WinMain(HINSTANCE hInstance,HINSTANCE hPrevInstance,LPSTR lpCmdLine,int nCmdShow)
-	{
-	MSG msg;																		// windows message structure
+int main(int argc, char *argv[]) {
 	done=false;																	// exit loop
+
+	glfwSetErrorCallback(error_callback);
+	
+	if (!glfwInit())
+		return 0;
+
+#if !DEBUG
 	// ask for fullscreen mode
-	#if !DEBUG
-	fullscreen=(MessageBox(NULL,"fullscreen mode?",name,MB_YESNO|MB_ICONQUESTION)==IDYES)?true:false;
-	#endif
+	if (isatty(STDOUT_FILENO)) {
+		printf("Run in fullscreen mode ? (y/n) ");
+		(getchar() == 121) ? fullscreen=true : fullscreen=false;
+	}
+#endif
+
 	// create openGL window
 	if(!CreateGLWindow(name)) return 0;					// quit if window not created
 	// load and play music
 	if(SNG) load_song();
 	// main loop
-	while(!done)
-		{
-		if(PeekMessage(&msg,NULL,0,0,PM_REMOVE))	// a message is waiting ?
-			{
-			if(msg.message==WM_QUIT)								// a quit message ?
-				{
-				done=true;														// quit window
-				}
-			else																		// a window message ?
-				{
-				TranslateMessage(&msg);								// translate message
-				DispatchMessage(&msg);								// dispatch message
-				}
-			}
-		else																			// no messages
-			{
-			// draw the scene, watch for escape key and quit message from DrawGLScene()
-			if((active&&!DrawGLScene())||keys[VK_ESCAPE]) done=true; else SwapBuffers(hDC);	// exit or swap buffers
-			if(keys[VK_F1])													// F1 pressed ?
-				{
-				debug_flag=!debug_flag;
-				keys[VK_F1]=false;										// make key false again
-				}
-			if(keys[VK_F2])													// F2 pressed ?
-				{
-				hidden_flag=!hidden_flag;
-				hidden_color();
-				keys[VK_F2]=false;										// make key false again
-				}
-			if(keys[VK_F3])													// F3 pressed ?
-				{
-				polygon=!polygon;
-				glPolygonMode(GL_FRONT,polygon?GL_FILL:GL_LINE);
-				//if(polygon) glDisable(GL_LINE_SMOOTH); else glEnable(GL_LINE_SMOOTH);
-				keys[VK_F3]=false;										// make key false again
-				}
-			#if DEBUG
-				if(keys[VK_BACK])											// backspace pressed ?
-					{
-					pause=!pause;
-					keys[VK_BACK]=false;								// make key false again
-					}
-				if(keys[VK_TAB])											// tab pressed ?
-					{
-					synchro();
-					keys[VK_TAB]=false;									// make key false again
-					}
-				if(keys[VK_SPACE])										// space pressed ?
-					{
-					KillGLWindow();											// kill current window
-					fullscreen=!fullscreen;							// toggle fullscreen/windowed mode
-					timer_global=0;
-					timer_global_buffer=0;
-					if(!CreateGLWindow(name)) return 0;	// quit if window not created
-					keys[VK_SPACE]=false;								// make key false again
-					}
-			#endif
-			if(keys[VK_RETURN])											// return pressed ?
-				{
-				#if DEBUG
-					flash();
-					hidden_color();
-					calc_txt();
-					razor_color=1.0f;
-					razor_radius=0;
-				#endif
-				frame_total=0;
-				timer_fps_total=0;
-				timer_fps_min=32768;
-				timer_fps_max=0;
-				keys[VK_RETURN]=false;
-				}
-			}
-		}
-	// shutdown
-	if(SNG) FMUSIC_FreeSong(mod);	// stop and kill music
-	KillGLWindow();								// kill the window
-	return (msg.wParam);					// exit the program
+	while(!done) {
+		// draw the scene, watch for escape key and quit message from DrawGLScene()
+		if((active&&!DrawGLScene())) done=true; else glfwSwapBuffers(window);	// exit or swap buffers
+		glfwPollEvents();
 	}
+	// shutdown
+	if(SNG) {
+		FMUSIC_StopSong(mod_state);
+		FMUSIC_FreeSong(mod);	// stop and kill music
+	}
+	KillGLWindow();								// kill the window
+	return 0;					// exit the program
+}

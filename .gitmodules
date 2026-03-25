@@ -1,0 +1,3 @@
+[submodule "external/minifmod"]
+	path = external/minifmod
+	url = https://github.com/SpinningKids/minifmod
