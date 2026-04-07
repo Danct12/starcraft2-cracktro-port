@@ -6,9 +6,6 @@ set (PROJECT_NAME "sc2_cracktro")
 
 project(${PROJECT_NAME})
 
-# Include sub-projects.
-add_subdirectory("external")
-
 find_package(glfw3 3.3 REQUIRED)
 find_package(OpenGL REQUIRED COMPONENTS OpenGL)
 
@@ -18,11 +15,11 @@ set(SRCS
 )
 
 set(RESRCS
-  db_wot61.xm
   font.bmp
   logo.bmp
   razor.bmp
   scanline.bmp
+  lpr231.mp3
 )
 
 add_executable(bin2h bin2h.c)
@@ -44,4 +41,4 @@ add_executable(${PROJECT_NAME} ${SRCS})
 add_dependencies(${PROJECT_NAME} do_gen_resrc)
 target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/resource")
 target_compile_options(${PROJECT_NAME} PRIVATE "-funsigned-char")
-target_link_libraries(${PROJECT_NAME} PUBLIC glfw minifmod OpenGL::GL OpenGL::GLU)
+target_link_libraries(${PROJECT_NAME} PUBLIC glfw OpenGL::GL OpenGL::GLU)

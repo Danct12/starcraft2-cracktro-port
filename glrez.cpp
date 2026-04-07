@@ -5,9 +5,7 @@
 #include <GL/gl.h>
 #include <GL/glu.h>
 #include "timer.h"
-#include <minifmod/minifmod.h>
 
-#include <db_wot61_xm.h>
 #include <font_bmp.h>
 #include <logo_bmp.h>
 #include <razor_bmp.h>
@@ -42,13 +40,32 @@ int frame_total=0;
 bool done=false;
 
 #ifdef SNG
-	Module *mod;			// music handle
-	PlayerState *mod_state;
-	int mod_ord=-1;				// pattern order
-	int mod_row=-1;				// row number
-	int mod_prv_row=0;		// previous row number
-	int mod_time=0;				// time
+// miniaudio
+#define MINIAUDIO_IMPLEMENTATION
+#define MA_ENABLE_ONLY_SPECIFIC_BACKENDS
+#define MA_NO_GENERATION
+#define MA_NO_ENCODING
+#define MA_NO_WAV
+#define MA_NO_FLAC
+#if _WIN32
+#define MA_ENABLE_DSOUND
+#elif __linux__
+#define MA_ENABLE_ALSA
+#else
+#error "Sound is not supported on this platform"
+#endif
+
+#include "miniaudio.h"
+#include <lpr231_mp3.h>
+
+#endif
+
+#ifdef SNG
+	ma_engine engine;
+	ma_sound sound;
 	bool mod_play=false;	// flag
+	float mod_pos=0;
+	float mod_prv_pos=0;
 #endif
 
 #define GEAR1_LIST 1
@@ -145,8 +162,13 @@ const char *txt_info2="\r\r\rÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿\r³        < Info
 const char *txt_info3="\r\r\r   ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿\r   ³        < Greetings >        ³\r   ÀÄÂÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÂÄÙ\r     ³    -=ğ BLIZZARD\003 ğ=-    ³\r     ³ \007 Please, try again \002 \007 ³\r   ÚÄÁÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÁÄ¿\rÄÄÄ´ ğğğ NO INTERNET NEEDED! ğğğ ÃÄÄÄ\r   ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ\r                                  ";
 const char *txt_info4="\r\r\r ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿\r ³ IF YOU LIKED THIS PRODUCT ³\r ÀÂÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÂÙ\rÄÄ´  -=ğ PLEASE BUY IT ğ=-  ÃÄÄ\r ÚÁÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÁ¿\r ³ THE PUBLISHERS OF QUALITY ³\r ³ SOFTWARE DESERVE SUPPORT! ³\r ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ\r                              ";
 const char *txt_info5="\r\r\rÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿\r³ You reach the end of this ³\r³ little intro. Thank a lot ³\r³ for reading everything! \002 ³\rÃÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ´\r³ As a gift, you can hit F2 ³\r³ key for an hidden message ³\rÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ\r                             ";
+
+const char *txt_info6="\r\r\rÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿\r³ I would like to thank you rez ³\r³   for releasing the source    ³\r³    of this wonderful demo  \002  ³\rÃÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ´\r³     and looper231 for this    ³\r³  remix/cover of the original  ³\r³    'intro number 61' module   ³\rÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ\r                             ";
+
+const char *txt_info7="\r\r\rÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿\r³                               ³\r³ You can now press ESC to quit ³\r³   or stay to watch it again   ³\r³                               ³\rÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ\r                             ";
+
 const char *txt_logo="\r\r\r/\\______  /\\______  ____/\\______     __\r\\____   \\/  \\__   \\/  _ \\____   \\ __/  \\____\r / _/  _/    \\/   /   /  / _/  _// / / / / /\r/  \\   \\  /\\ /   /\\  /  /  \\   \\/ /\\  / / /\r\\__/\\   \\/RTX______\\___/\\__/\\   \\/ / /_/_/\rğğğğğ\\___)ğğğ\\__)ğğğğğğğğğğğğ\\___)ğ\\/ğğğğğğ\rRAZOR 1911 \007 SHARPENING THE BLADE 1985,2010 \r                                            ";
-const char *txt_credits[]={"PIRATES OF THE 777 SEAS ","","","","CODE","REZ","","LOGO","KENET","","MUSIC","WOTW","DUBMOOD"};
+const char *txt_credits[]={"PIRATES OF THE 777 SEAS ","","","","CODE","REZ","","LOGO","KENET","","MUSIC","WOTW","LOOPER231"};
 const char *txt_intro="";
 const char *txt_intro1="\003 WE ARE PROUD TO PRESENT \003";
 const char *txt_intro2="\002 A BRAND NEW RELEASE BY \002";
@@ -296,62 +318,21 @@ float angle,radius,scale;
 
 #ifdef SNG
 
-typedef struct {
-	size_t length;
-	size_t pos;
-	char *data;
-} MEMFILE;
-
-void *memopen(const char *name)
-{
-	MEMFILE *memfile;
-	unsigned char* data;
-	size_t len;
-	memfile=(MEMFILE*)calloc(1, sizeof(*memfile));
-
-	data = db_wot61_xm;
-	len = db_wot61_xm_size;
-	
-	memfile->length = len;
-	memfile->data = (char*)calloc(1, memfile->length);
-	memcpy(memfile->data, data, len);
-	memfile->pos = 0;
-
-	return memfile;
-}
-
-void memclose(void *handle) {
-	free(handle);
-}
-
-size_t memread(void *buffer, size_t size, void *handle) {
-	MEMFILE *memfile=(MEMFILE*)handle;
-	if(memfile->pos+size>=memfile->length) size=memfile->length-memfile->pos;
-	memcpy(buffer,(char *)memfile->data+memfile->pos,size);
-	memfile->pos+=size;	
-	return size;
-}
-
-void memseek(void *handle,long pos, int mode) {
-	MEMFILE *memfile=(MEMFILE*)handle;
-	if(mode==SEEK_SET) 
-		memfile->pos=pos;
-	else if(mode==SEEK_CUR) 
-		memfile->pos+=pos;
-	else if(mode==SEEK_END)
-		memfile->pos=memfile->length+pos;
-	if(memfile->pos>memfile->length)
-		memfile->pos=memfile->length;
-}
-
-long memtell(void *handle) {
-	MEMFILE *memfile=(MEMFILE*)handle;
-	return memfile->pos;
-}
-
 void load_song() {
-	FSOUND_File_SetCallbacks(memopen,memclose,memread,memseek,memtell);
-	mod=FMUSIC_LoadSong(NULL,NULL);
+	ma_result result;
+	
+	result = ma_engine_init(NULL, &engine);
+	if (result != MA_SUCCESS)
+		exit(0);
+
+	result = ma_resource_manager_register_encoded_data(
+		ma_engine_get_resource_manager(&engine), "music", lpr231_mp3, lpr231_mp3_size);
+	if (result != MA_SUCCESS)
+		exit(0);
+
+	result = ma_sound_init_from_file(&engine, "music", 0, NULL, NULL, &sound);
+	if (result != MA_SUCCESS)
+		exit(0);
 }
 
 #endif
@@ -1158,7 +1139,7 @@ int DrawGLScene(void) // draw scene
 		if(!mod_play&&timer_global>decrunch_time)
 			{
 			mod_play=true;
-			if(SNG) mod_state = FMUSIC_PlaySong(mod);
+			if(SNG) ma_sound_start(&sound);
 			}
 		/*if(liner_count_i!=0)
 			{
@@ -1202,11 +1183,10 @@ int DrawGLScene(void) // draw scene
 		}
 	if(SNG&&mod_play)
 		{
-		mod_prv_row=mod_row;
-		mod_row=FMUSIC_GetRow();
-		//mod_time=FMUSIC_GetTime();
-		if(mod_row!=mod_prv_row)
-			{
+		mod_prv_pos = mod_pos;
+		ma_sound_get_cursor_in_seconds(&sound, &mod_pos);
+		mod_pos = round(mod_pos * 10)/10;
+#if 0
 			if(mod_row==0)
 				{
 				#if !DEBUG
@@ -1224,152 +1204,145 @@ int DrawGLScene(void) // draw scene
 						}
 				#endif
 				}
-			if(mod_row%16==8) synchro();
-			switch(mod_ord)
-				{
-				case 0:
-					if(mod_row==0)
-						{
-						decrunch_flag=false;
-						border_flag=true;
-						intro_flag=true;
-						intro_h=0;
-						txt_intro=txt_intro1;
-						intro_length=(int)strlen(txt_intro);
-						bgd_base_r=0;
-						bgd_base_g=0;
-						bgd_base_b=0;
-						fog_color[0]=bgd_base_r;
-						fog_color[1]=bgd_base_g;
-						fog_color[2]=bgd_base_b;
-						glFogfv(GL_FOG_COLOR,fog_color);
-						flash();
-						}
-					break;
-				case 1:
-					if(mod_row==0)
-						{
-						intro_h=0;
-						txt_intro=txt_intro2;
-						intro_length=(int)strlen(txt_intro);
-						flash();
-						}
-					if(mod_row==48)
-						{
-						intro_angle=main_angle;
-						}
-					break;
-				case 2:
-					if(mod_row==0)
-						{
-						intro_flag=false;
-						border_flag=true;
-						razor_flag1=true;
-						cube_flag=true;
-						bgd_base_r=0.125f;
-						bgd_base_g=0.05f;
-						bgd_base_b=0.075f;
-						fog_color[0]=bgd_base_r;
-						fog_color[1]=bgd_base_g;
-						fog_color[2]=bgd_base_b;
-						glFogfv(GL_FOG_COLOR,fog_color);
-						razor_angle=main_angle;
-						razor_angle_transition=main_angle;
-						}
-					break;
-				case 3:
-					if(mod_row==48)
-						{
-						razor_flag1=false;
-						razor_flag2=true;
-						razor_angle_out=main_angle;
-						}
-					if(mod_row==58)
-						{
-						razor_angle_close=main_angle;
-						razor_close=true;
-						}
-					break;
-				case 4:
-					if(mod_row==0)
-						{
-						border_flag=true;
-						razor_flag2=false;
-						razor_close=false;
-						cube_flag=false;
-						gradient_flag=true;
-						credits_flag=true;
-						logo_flag=true;
-						gear_flag=true;
-						liner_flag=true;
-						txt=txt_info1;
-						calc_txt();
-						flash();
-						}
-					break;
-				case 8:
-					if(mod_row==0)
-						{
-						txt=txt_info2;
-						calc_txt();
-						hidden_color();
-						//flash();
-						}
-					break;
-				case 12:
-					if(mod_row==0)
-						{
-						txt=txt_logo;
-						calc_txt();
-						hidden_color();
-						//flash();
-						}
-					break;
-				case 16:
-					if(mod_row==0)
-						{
-						txt=txt_info3;
-						calc_txt();
-						hidden_color();
-						//flash();
-						}
-					break;
-				case 20:
-					if(mod_row==0)
-						{
-						txt=txt_info4;
-						calc_txt();
-						hidden_color();
-						//flash();
-						}
-					break;
-				case 24:
-					if(mod_row==0)
-						{
-						txt=txt_info5;
-						calc_txt();
-						hidden_color();
-						//flash();
-						}
-					break;
-				case 28:
-					if(mod_row==0)
-						{
-						txt=txt_info1;
-						calc_txt();
-						hidden_color();
-						//flash();
-						}
-					break;
-				case 7: case 11: case 15: case 19: case 23: case 27:
-					if(mod_row==48)
-						{
-						fade();
-						}
-					break;
-				}
+#endif
+		if (mod_pos != mod_prv_pos) {
+			if(fmodf(mod_pos, 1)==0.5f) synchro();
+			if (mod_pos == 2.0f) {
+				border_flag=true;
+				razor_flag1=false;
+				razor_flag2=false;
+				razor_close=false;
+				cube_flag=false;
+				gradient_flag=false;
+				credits_flag=false;
+				logo_flag=false;
+				gear_flag=false;
+				liner_flag=false;
+				intro_angle=0;
+				decrunch_flag=false;
+				border_flag=true;
+				intro_flag=true;
+				intro_h=0;
+				txt_intro=txt_intro1;
+				intro_length=(int)strlen(txt_intro);
+				bgd_base_r=0;
+				bgd_base_g=0;
+				bgd_base_b=0;
+				fog_color[0]=bgd_base_r;
+				fog_color[1]=bgd_base_g;
+				fog_color[2]=bgd_base_b;
+				glFogfv(GL_FOG_COLOR,fog_color);
+				flash();
+			}
+			else if(mod_pos == 6.0f) {
+				intro_h=0;
+				txt_intro=txt_intro2;
+				intro_length=(int)strlen(txt_intro);
+				flash();
+			}
+			else if(mod_pos == 8.5f) {
+				intro_angle=main_angle;
+			}
+			else if(mod_pos == 9.5f) {
+				intro_flag=false;
+				border_flag=true;
+				razor_flag1=true;
+				cube_flag=true;
+				bgd_base_r=0.125f;
+				bgd_base_g=0.05f;
+				bgd_base_b=0.075f;
+				fog_color[0]=bgd_base_r;
+				fog_color[1]=bgd_base_g;
+				fog_color[2]=bgd_base_b;
+				glFogfv(GL_FOG_COLOR,fog_color);
+				razor_angle=main_angle;
+				razor_angle_transition=main_angle;
+			}
+			else if(mod_pos == 16.4f) {
+				razor_flag1=false;
+				razor_flag2=true;
+				razor_angle_out=main_angle;
+			}
+			else if(mod_pos == 16.7f) {
+				razor_angle_close=main_angle;
+				razor_close=true;
+			}
+			else if(mod_pos == 17.3f) {
+				border_flag=true;
+				razor_flag2=false;
+				razor_close=false;
+				cube_flag=false;
+				gradient_flag=true;
+				credits_flag=true;
+				logo_flag=true;
+				gear_flag=true;
+				liner_flag=true;
+				txt=txt_info1;
+				calc_txt();
+				flash();
+			}
+			else if(mod_pos == 32.8f) {
+				txt=txt_info2;
+				calc_txt();
+				hidden_color();
+				//flash();
+			}
+			else if(mod_pos == 48.0f) {
+				txt=txt_logo;
+				calc_txt();
+				hidden_color();
+				//flash();
+			}
+			else if(mod_pos == 63.3f) {
+				txt=txt_info3;
+				calc_txt();
+				hidden_color();
+				//flash();
+			}
+			else if(mod_pos == 80.5f) {
+				txt=txt_info4;
+				calc_txt();
+				hidden_color();
+				//flash();
+			}
+			else if(mod_pos == 96.0f) {
+				txt=txt_info5;
+				calc_txt();
+				hidden_color();
+				//flash();
+			}
+			else if(mod_pos == 113.0f) {
+				txt=txt_info6;
+				calc_txt();
+				hidden_color();
+				//flash();
+			}
+			else if(mod_pos == 144.0f) {
+				txt=txt_info7;
+				calc_txt();
+				hidden_color();
+				//flash();
 			}
 		}
+
+		if((mod_pos>=28.5f && mod_pos<28.6f) ||
+			(mod_pos>=44.0f && mod_pos<44.1f ) ||
+			(mod_pos>=60.0f && mod_pos<60.1f ) ||
+			(mod_pos>=75.0f && mod_pos<75.1f ) ||
+			(mod_pos>=94.0f && mod_pos<94.1f ) ||
+			(mod_pos>=110.0f && mod_pos<110.1f ||
+			(mod_pos>=130.0f && mod_pos<130.1f ))) {
+			fade();
+		}
+
+		if(ma_sound_at_end(&sound)) {
+			ma_sound_reset_stop_time_and_fade(&sound);
+			ma_sound_seek_to_second(&sound, 0);
+			ma_sound_start(&sound);
+		}
+
+		}
+
 	// clear screen and depth buffer
 	init2d(screen_w,screen_h);
 	glClearColor(bgd_base_r,bgd_base_g,bgd_base_b,1.0f);
@@ -2114,7 +2087,7 @@ int DrawGLScene(void) // draw scene
 		glBlendFunc(GL_ONE,GL_ONE);
 		glColor3f(0.25f,0.225f,0.2f);
 		char debug[192];
-		sprintf(debug,"*** DEBUG ***\nscreen=%d*%d\nfps=%3.1f\naverage=%3.1f\nfps min=%3.1f\nfps max=%3.1f\n%d frame(s)\nmusic [%02d-%02d]",screen_w,screen_h,timer_fps,timer_fps_average,timer_fps_min,timer_fps_max,timer_frame,mod_ord,mod_row);
+		sprintf(debug,"*** DEBUG ***\nscreen=%d*%d\nfps=%3.1f\naverage=%3.1f\nfps min=%3.1f\nfps max=%3.1f\n%d frame(s)\nmusic=%.1fs",screen_w,screen_h,timer_fps,timer_fps_average,timer_fps_min,timer_fps_max,timer_frame,mod_pos);
 		glLoadIdentity();
 		glTranslatef(0,debug_h*0.65f,0);
 		j=0;
@@ -2284,8 +2257,9 @@ int main(int argc, char *argv[]) {
 	}
 	// shutdown
 	if(SNG) {
-		FMUSIC_StopSong(mod_state);
-		FMUSIC_FreeSong(mod);	// stop and kill music
+		ma_sound_stop(&sound);
+		ma_sound_uninit(&sound);
+		ma_engine_uninit(&engine);
 	}
 	KillGLWindow();								// kill the window
 	return 0;					// exit the program
