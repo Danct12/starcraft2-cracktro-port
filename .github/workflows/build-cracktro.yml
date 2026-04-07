@@ -1,0 +1,61 @@
+name: Build original cracktro
+
+on:
+  push:
+    branches: [ "glfw" ]
+  pull_request:
+    branches: [ "glfw" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      # Set fail-fast to false to ensure that feedback is delivered for all matrix combinations. Consider changing this to true when your workflow is stable.
+      fail-fast: false
+
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm]
+        build_type: [MinSizeRel]
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get -y upgrade
+        sudo apt-get -y install libglu1-mesa-dev libglfw3-dev libpulse-dev
+
+    - name: Set reusable strings
+      # Turn repeated input strings (such as the build output directory) into step outputs. These step outputs can be used throughout the workflow file.
+      id: strings
+      shell: bash
+      run: |
+        echo "build-output-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
+
+    - name: Configure CMake
+      # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
+      # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
+      run: >
+        cmake -B ${{ steps.strings.outputs.build-output-dir }}
+        -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+        -S ${{ github.workspace }}
+
+    - name: Build
+      # Build your program with the given configuration. Note that --config is needed because the default Windows generator is a multi-config generator (Visual Studio generator).
+      run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ matrix.build_type }}
+
+    - name: Strip and rename binary
+      run: |
+        strip ${{ steps.strings.outputs.build-output-dir }}/sc2_cracktro
+        cp ${{ steps.strings.outputs.build-output-dir }}/sc2_cracktro ${{ steps.strings.outputs.build-output-dir }}/sc2_cracktro-${{ matrix.os }}
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: sc2_cracktro-${{ matrix.os }}
+        path: ${{ steps.strings.outputs.build-output-dir }}/sc2_cracktro-${{ matrix.os }}
