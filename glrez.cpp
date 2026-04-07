@@ -7,11 +7,11 @@
 #include "timer.h"
 #include <minifmod/minifmod.h>
 
-#include "resource/db_wot61.h"
-#include "resource/font.h"
-#include "resource/logo.h"
-#include "resource/razor.h"
-#include "resource/scanline.h"
+#include <db_wot61_xm.h>
+#include <font_bmp.h>
+#include <logo_bmp.h>
+#include <razor_bmp.h>
+#include <scanline_bmp.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_BMP
@@ -82,8 +82,8 @@ float nearplane=0.5f;		// nearplane
 float farplane=1000.0f;	// farplane
 bool polygon=true;			// polygon mode
 /* window variable			*/
-int window_w=800;				// width
-int window_h=500;				// height
+int window_w=1280;				// width
+int window_h=720;				// height
 int screen_w;						// width
 int screen_h;						// height
 int screen_average;			// average
@@ -309,8 +309,8 @@ void *memopen(const char *name)
 	size_t len;
 	memfile=(MEMFILE*)calloc(1, sizeof(*memfile));
 
-	data = db_wot61;
-	len = db_wot61_len;
+	data = db_wot61_xm;
+	len = db_wot61_xm_size;
 	
 	memfile->length = len;
 	memfile->data = (char*)calloc(1, memfile->length);
@@ -973,10 +973,10 @@ int InitGL(void)
 	glFogf(GL_FOG_START,2.0f);				// fog start depth
 	glFogf(GL_FOG_END,32.0f);					// fog end depth
 	// load texture
-	font_id = load_tex(font, font_len,GL_LINEAR,GL_REPEAT);
-	razor_id = load_tex(razor, razor_len,GL_LINEAR,GL_CLAMP);
-	logo_id = load_tex(logo, logo_len,GL_LINEAR,GL_CLAMP);
-	scanline_id = load_tex(scanline, scanline_len,GL_LINEAR,GL_REPEAT);
+	font_id = load_tex(font_bmp, font_bmp_size,GL_LINEAR,GL_REPEAT);
+	razor_id = load_tex(razor_bmp, razor_bmp_size,GL_LINEAR,GL_CLAMP);
+	logo_id = load_tex(logo_bmp, logo_bmp_size,GL_LINEAR,GL_CLAMP);
+	scanline_id = load_tex(scanline_bmp, scanline_bmp_size,GL_LINEAR,GL_REPEAT);
 	// generate list
 	glNewList(GEAR1_LIST,GL_COMPILE);
 		//glPushMatrix();
